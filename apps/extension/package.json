@@ -1,0 +1,83 @@
+{
+  "name": "codex-chat-auto-sync",
+  "displayName": "Codex Chat Sync",
+  "description": "同步本地 Codex 聊天记录并保存 AI 编程日报。",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexChatSync.syncNow",
+        "title": "Codex 聊天同步：立即同步"
+      },
+      {
+        "command": "codexChatSync.openDashboard",
+        "title": "Codex 聊天同步：打开面板"
+      },
+      {
+        "command": "codexChatSync.generateTodaySummary",
+        "title": "Codex 聊天同步：生成今日日报"
+      },
+      {
+        "command": "codexChatSync.saveSummaryToWorkspace",
+        "title": "Codex 聊天同步：保存日报到项目"
+      },
+      {
+        "command": "codexChatSync.configure",
+        "title": "Codex 聊天同步：配置"
+      },
+      {
+        "command": "codexChatSync.showLogs",
+        "title": "Codex 聊天同步：查看日志"
+      }
+    ],
+    "configuration": {
+      "title": "Codex 聊天同步",
+      "properties": {
+        "codexChatSync.sessionsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Codex sessions 目录路径。"
+        },
+        "codexChatSync.apiBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "后台 API 地址。"
+        },
+        "codexChatSync.autoSyncEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "VS Code 启动时同步，并按间隔自动同步。"
+        },
+        "codexChatSync.syncIntervalMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "自动同步间隔，单位为分钟。"
+        },
+        "codexChatSync.scanDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "扫描最近多少天的 session 文件。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "@types/vscode": "^1.92.0",
+    "typescript": "^5.6.2"
+  }
+}

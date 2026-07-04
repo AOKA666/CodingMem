@@ -1,0 +1,14 @@
+{
+  "name": "codex-chat-auto-sync",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/extension",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace apps/web && npm run compile --workspace apps/extension",
+    "dev:web": "npm run dev --workspace apps/web",
+    "compile:extension": "npm run compile --workspace apps/extension"
+  }
+}

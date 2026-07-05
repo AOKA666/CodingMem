@@ -29,7 +29,7 @@ export async function updateProjectName(formData: FormData) {
   }
 
   const supabase = getSupabaseAdmin();
-  const { start, end } = getSevenDayRange(date);
+  const { start, end } = getThirtyDayRange(date);
   let query = supabase
     .from("codingMem_raw_messages")
     .update({ project_name: trimmedName })
@@ -61,7 +61,7 @@ export async function updateProjectName(formData: FormData) {
   revalidatePath("/summaries");
 }
 
-function getSevenDayRange(date: string) {
+function getThirtyDayRange(date: string) {
   const endDateValue = new Date(`${date}T00:00:00.000Z`);
   const startDateValue = new Date(endDateValue);
   startDateValue.setUTCDate(startDateValue.getUTCDate() - 29);

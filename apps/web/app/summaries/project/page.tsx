@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { todayIsoDate } from "@/lib/date";
-import { stripThinkTags } from "@/lib/summarize";
+import { projectDisplayName, projectIdentityKey, UNNAMED_PROJECT_KEY } from "@/lib/projectIdentity";
+import { fetchRawMessagesInRange } from "@/lib/rawMessages";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { summarizeTimelineRows, summarizeTimelineTitle } from "@/lib/timelineSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +22,8 @@ type RawMessageRow = {
 
 export default async function ProjectMemoryPage({ searchParams }: { searchParams: SearchParams }) {
   const selectedDate = searchParams.date || todayIsoDate();
-  const projectKey = searchParams.project || "__NULL__";
-  const projectName = projectKey === "__NULL__" ? null : decodeURIComponent(projectKey);
-  const data = await getProjectTimeline(selectedDate, projectName);
-  const displayName = projectName || "未命名项目";
+  const projectKey = searchParams.project ? decodeURIComponent(searchParams.project) : UNNAMED_PROJECT_KEY;
+  const data = await getProjectTimeline(selectedDate, projectKey);
 
   return (
     <main className="detail-shell">
@@ -33,12 +33,11 @@ export default async function ProjectMemoryPage({ searchParams }: { searchParams
             返回项目记忆
           </Link>
           <p className="eyebrow">项目详情</p>
-          <h1>{displayName}</h1>
+          <h1>{data.displayName}</h1>
         </div>
         <div className="detail-stat-row">
           <span>{data.messages} 条记录</span>
-          <span>{data.userMessages} 次提问</span>
-          <span>{data.assistantMessages} 次回复</span>
+          <span>{data.devices} 台设备</span>
         </div>
       </header>
 
@@ -59,7 +58,7 @@ export default async function ProjectMemoryPage({ searchParams }: { searchParams
                 <h3>{node.title}</h3>
                 <p>{node.text}</p>
                 <small>
-                  {node.messages} 条记录 · 我提问 {node.userMessages} 次 · Codex 回复 {node.assistantMessages} 次
+                  {node.messages} 条记录 · {node.devices} 台设备
                 </small>
               </div>
             </article>
@@ -71,19 +70,16 @@ export default async function ProjectMemoryPage({ searchParams }: { searchParams
   );
 }
 
-async function getProjectTimeline(date: string, projectName: string | null) {
+async function getProjectTimeline(date: string, projectKey: string) {
   const supabase = getSupabaseAdmin();
   const { start, end } = getMemoryRange(date);
-  let query = supabase
-    .from("codingMem_raw_messages")
-    .select("role, content, occurred_at, project_name, device_id")
-    .gte("occurred_at", start)
-    .lt("occurred_at", end)
-    .order("occurred_at", { ascending: true });
-
-  query = projectName === null ? query.is("project_name", null) : query.eq("project_name", projectName);
-  const { data } = await query;
-  const rows = (data ?? []) as RawMessageRow[];
+  const allRows = await fetchRawMessagesInRange<RawMessageRow>(
+    supabase,
+    "role, content, occurred_at, project_name, device_id",
+    start,
+    end
+  );
+  const rows = allRows.filter((row) => projectIdentityKey(row.project_name) === projectKey);
   const hourMap = new Map<string, RawMessageRow[]>();
 
   rows.forEach((row) => {
@@ -94,49 +90,33 @@ async function getProjectTimeline(date: string, projectName: string | null) {
     hourMap.set(key, bucket);
   });
 
-  const nodes = Array.from(hourMap.entries()).map(([key, hourRows]) => {
+  const nodes = Array.from(hourMap.entries()).flatMap(([key, hourRows]) => {
     const first = new Date(hourRows[0].occurred_at);
-    const userMessages = hourRows.filter((row) => row.role === "user").length;
-    const assistantMessages = hourRows.filter((row) => row.role === "assistant").length;
-    return {
+    const title = summarizeTimelineTitle(hourRows);
+    const text = summarizeRows(hourRows);
+    if (!title || !text) return [];
+
+    return [{
       key,
       day: first.toISOString().slice(5, 10),
       hour: `${first.getHours().toString().padStart(2, "0")}:00`,
-      title: pickTopic(hourRows) || "项目交流",
-      text: summarizeRows(hourRows),
+      title,
+      text,
       messages: hourRows.length,
-      userMessages,
-      assistantMessages
-    };
+      devices: new Set(hourRows.map((row) => row.device_id)).size
+    }];
   });
 
   return {
+    displayName: projectDisplayName(rows[0]?.project_name ?? (projectKey === UNNAMED_PROJECT_KEY ? null : projectKey)),
     messages: rows.length,
-    userMessages: rows.filter((row) => row.role === "user").length,
-    assistantMessages: rows.filter((row) => row.role === "assistant").length,
+    devices: new Set(rows.map((row) => row.device_id)).size,
     nodes
   };
 }
 
 function summarizeRows(rows: RawMessageRow[]) {
-  const userRows = rows.filter((row) => row.role === "user");
-  const assistantRows = rows.filter((row) => row.role === "assistant");
-  const topic = pickTopic(userRows.length > 0 ? userRows : rows);
-  if (topic) {
-    return `这一小时主要围绕“${topic}”推进讨论，包含 ${rows.length} 条记录，Codex 回复 ${assistantRows.length} 次。`;
-  }
-  return `这一小时有 ${rows.length} 条项目交流，我提问 ${userRows.length} 次，Codex 回复 ${assistantRows.length} 次。`;
-}
-
-function pickTopic(rows: RawMessageRow[]) {
-  const text = rows
-    .map((row) => stripThinkTags(row.content))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .replace(/[{}[\]()`"'<>]/g, "")
-    .trim();
-  if (!text) return "";
-  return text.length > 42 ? `${text.slice(0, 42)}...` : text;
+  return summarizeTimelineRows(rows);
 }
 
 function getMemoryRange(date: string) {

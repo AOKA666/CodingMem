@@ -76,17 +76,18 @@ export async function POST(request: NextRequest) {
 
   const rowMap = new Map<string, Record<string, unknown>>();
   validMessages.forEach((message) => {
+    const content = sanitizePostgresString(message.content ?? "");
     rowMap.set(message.message_hash as string, {
       user_id: "default",
-      device_id: device.device_id,
-      source: message.source || "codex",
-      project_name: message.project_name ?? body.workspace?.project_name ?? null,
-      project_path_hash: message.project_path_hash ?? body.workspace?.project_path_hash ?? null,
-      session_id: message.session_id ?? null,
+      device_id: sanitizePostgresString(device.device_id),
+      source: sanitizePostgresString(message.source || "codex"),
+      project_name: sanitizeNullableString(message.project_name ?? body.workspace?.project_name),
+      project_path_hash: sanitizeNullableString(message.project_path_hash ?? body.workspace?.project_path_hash),
+      session_id: sanitizeNullableString(message.session_id),
       message_hash: message.message_hash,
-      role: message.role ?? "unknown",
-      content: message.content,
-      raw_json: message.raw ?? {},
+      role: sanitizePostgresString(message.role ?? "unknown"),
+      content,
+      raw_json: sanitizeJsonValue(message.raw ?? {}),
       occurred_at: new Date(message.occurred_at as string).toISOString()
     });
   });
@@ -128,4 +129,54 @@ export async function POST(request: NextRequest) {
     failed: failed.length,
     errors: failed.slice(0, 10)
   });
+}
+
+function sanitizeNullableString(value: unknown) {
+  return typeof value === "string" ? sanitizePostgresString(value) : null;
+}
+
+function sanitizePostgresString(value: string) {
+  return replaceUnpairedSurrogates(value).replace(/\u0000/g, "");
+}
+
+function sanitizeJsonValue(value: unknown): unknown {
+  if (typeof value === "string") return sanitizePostgresString(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        sanitizePostgresString(key),
+        sanitizeJsonValue(item)
+      ])
+    );
+  }
+  return value;
+}
+
+function replaceUnpairedSurrogates(value: string) {
+  let result = "";
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value[index] + value[index + 1];
+        index += 1;
+      } else {
+        result += "\ufffd";
+      }
+      continue;
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      result += "\ufffd";
+      continue;
+    }
+
+    result += value[index];
+  }
+
+  return result;
 }

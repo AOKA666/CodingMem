@@ -11,6 +11,16 @@ type RawMessage = {
   session_id: string | null;
 };
 
+const DEFAULT_INPUT_CHAR_LIMIT = 900;
+const MESSAGE_CHAR_LIMIT = 240;
+const LOW_VALUE_CONTENT = [
+  /<environment_context>[\s\S]*?<\/environment_context>/gi,
+  /<permissions instructions>[\s\S]*?<\/permissions instructions>/gi,
+  /<think>[\s\S]*?<\/think>/gi
+];
+const POLICY_META = /(?:system prompt|developer policy|priority rules|thinking mode|think tags|root_system_policy)/i;
+const REASONING_LINE = /^(?:wait[,.:\s]|actually\b|the system prompt\b|this is a conflict\b|according to priority rules\b|root_system_policy\b)/i;
+
 const SYSTEM_PROMPT = `你是一个产品记忆整理助手。
 
 请把这段时间内的 Codex 聊天记录整理成一份便于回看的项目记忆。只从“功能、体验、问题、结果”的角度总结，不写项目架构、代码文件、函数名、接口名、数据库表名、命令、路径或实现细节。
@@ -50,7 +60,7 @@ export async function generateSummaryForDate(date: string) {
     throw new Error("还没有同步到聊天记录");
   }
 
-  const summary = stripThinkTags(await callLlm(messages));
+  const summary = sanitizeSummary(await callLlm(messages));
   const projectMap = new Map<string, string>();
   messages.forEach((message) => {
     projectMap.set(projectIdentityKey(message.project_name), projectDisplayName(message.project_name));
@@ -83,6 +93,18 @@ export function stripThinkTags(content: string) {
     .trim();
 }
 
+export function sanitizeSummary(content: string) {
+  const withoutThinking = stripThinkTags(content);
+  const summaryStart = withoutThinking.indexOf("项目记忆总览");
+  const structured = summaryStart >= 0 ? withoutThinking.slice(summaryStart) : withoutThinking;
+
+  return structured
+    .split("\n")
+    .filter((line) => !REASONING_LINE.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 async function callLlm(messages: RawMessage[]) {
   const apiKey = process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -91,12 +113,7 @@ async function callLlm(messages: RawMessage[]) {
 
   const baseUrl = process.env.MINIMAX_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.minimaxi.com/v1";
   const model = process.env.MINIMAX_MODEL || process.env.OPENAI_MODEL || "MiniMax-M3";
-  const chatText = messages
-    .map((message) => {
-      const project = projectDisplayName(message.project_name);
-      return `[${message.occurred_at}] [${project}] [${message.role || "unknown"}] ${message.content}`;
-    })
-    .join("\n\n");
+  const chatText = buildLlmInput(messages, getInputCharLimit());
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -126,6 +143,60 @@ async function callLlm(messages: RawMessage[]) {
   }
 
   return content;
+}
+
+function getInputCharLimit() {
+  const configured = Number.parseInt(process.env.SUMMARY_INPUT_CHAR_LIMIT || "", 10);
+  return Number.isFinite(configured) && configured >= 200 ? configured : DEFAULT_INPUT_CHAR_LIMIT;
+}
+
+export function buildLlmInput(messages: RawMessage[], charLimit = DEFAULT_INPUT_CHAR_LIMIT) {
+  const grouped = new Map<string, RawMessage[]>();
+
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const project = projectDisplayName(message.project_name);
+    const projectMessages = grouped.get(project) || [];
+    projectMessages.push(message);
+    grouped.set(project, projectMessages);
+  }
+
+  const queues = Array.from(grouped.entries()).map(([project, projectMessages]) => ({
+    project,
+    messages: projectMessages.slice().reverse()
+  }));
+  const selected: string[] = [];
+  let cursor = 0;
+
+  // Rotate through projects so a busy project cannot consume the entire context budget.
+  while (queues.some((queue) => queue.messages.length > 0)) {
+    const queue = queues[cursor % queues.length];
+    cursor += 1;
+    const message = queue.messages.shift();
+    if (!message) continue;
+
+    const content = cleanMessageContent(message.content);
+    if (!content) continue;
+
+    const line = `[${message.occurred_at.slice(0, 16)}] [${queue.project}] [${message.role || "unknown"}] ${content}`;
+    const candidate = [...selected, line].join("\n");
+    if (candidate.length > charLimit) {
+      if (selected.length === 0) return line.slice(0, charLimit);
+      continue;
+    }
+    selected.push(line);
+  }
+
+  return selected.join("\n").slice(0, charLimit);
+}
+
+function cleanMessageContent(content: string) {
+  if (POLICY_META.test(content)) return "";
+  let cleaned = content;
+  for (const pattern of LOW_VALUE_CONTENT) cleaned = cleaned.replace(pattern, " ");
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  if (REASONING_LINE.test(cleaned)) return "";
+  return cleaned.slice(0, MESSAGE_CHAR_LIMIT);
 }
 
 function fallbackSummary(messages: RawMessage[]) {

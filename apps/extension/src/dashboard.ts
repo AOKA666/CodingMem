@@ -2,6 +2,20 @@ import * as vscode from "vscode";
 import { SyncState } from "./types";
 import { defaultSessionsPath } from "./utils";
 
+export class CodexChatSyncSidebarProvider implements vscode.WebviewViewProvider {
+  static readonly viewType = "codexChatSync.sidebar";
+
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
+  resolveWebviewView(webviewView: vscode.WebviewView) {
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.html = renderDashboard(this.context);
+    registerDashboardMessages(webviewView.webview, () => {
+      webviewView.webview.html = renderDashboard(this.context);
+    });
+  }
+}
+
 export function openDashboard(context: vscode.ExtensionContext) {
   const panel = vscode.window.createWebviewPanel(
     "codexChatSyncDashboard",
@@ -11,20 +25,35 @@ export function openDashboard(context: vscode.ExtensionContext) {
   );
 
   panel.webview.html = renderDashboard(context);
-
-  panel.webview.onDidReceiveMessage(async (message) => {
-    const commandMap: Record<string, string> = {
-      syncNow: "codexChatSync.syncNow",
-      generateTodaySummary: "codexChatSync.generateTodaySummary",
-      saveSummaryToWorkspace: "codexChatSync.saveSummaryToWorkspace",
-      openLogs: "codexChatSync.showLogs"
-    };
-    const command = commandMap[message?.command];
-    if (command) {
-      await vscode.commands.executeCommand(command);
-      panel.webview.html = renderDashboard(context);
-    }
+  registerDashboardMessages(panel.webview, () => {
+    panel.webview.html = renderDashboard(context);
   });
+}
+
+function registerDashboardMessages(
+  webview: vscode.Webview,
+  refresh: () => void
+) {
+  webview.onDidReceiveMessage(async (message) => {
+    const command = getDashboardCommand(message?.command);
+    if (!command) {
+      return;
+    }
+
+    await vscode.commands.executeCommand(command);
+    refresh();
+  });
+}
+
+function getDashboardCommand(action: unknown) {
+  const commandMap: Record<string, string> = {
+    syncNow: "codexChatSync.syncNow",
+    generateTodaySummary: "codexChatSync.generateTodaySummary",
+    saveSummaryToWorkspace: "codexChatSync.saveSummaryToWorkspace",
+    openLogs: "codexChatSync.showLogs"
+  };
+
+  return typeof action === "string" ? commandMap[action] : undefined;
 }
 
 function renderDashboard(context: vscode.ExtensionContext) {

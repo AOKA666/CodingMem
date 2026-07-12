@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isIsoDate } from "@/lib/date";
-import { stripThinkTags } from "@/lib/summarize";
+import { sanitizeSummary } from "@/lib/summarize";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, date, summary: stripThinkTags(data?.summary_markdown ?? "") });
+    return NextResponse.json({ ok: true, date, summary: sanitizeSummary(data?.summary_markdown ?? "") });
   }
 
   const { data, error } = await supabase
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     ok: true,
     summaries: (data ?? []).map((item) => ({
       ...item,
-      summary_markdown: stripThinkTags(item.summary_markdown ?? "")
+      summary_markdown: sanitizeSummary(item.summary_markdown ?? "")
     }))
   });
 }

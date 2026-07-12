@@ -2,7 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { generateTodaySummary, getTodaySummary } from "./apiClient";
-import { openDashboard } from "./dashboard";
+import { CodexChatSyncSidebarProvider, openDashboard } from "./dashboard";
 import { runSync } from "./sync";
 import { getWorkspaceRoot, normalizeApiBaseUrl } from "./utils";
 
@@ -12,6 +12,18 @@ let output: vscode.OutputChannel;
 export function activate(context: vscode.ExtensionContext) {
   output = vscode.window.createOutputChannel("Codex 聊天同步");
   context.subscriptions.push(output);
+
+  const sidebarProvider = new CodexChatSyncSidebarProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(CodexChatSyncSidebarProvider.viewType, sidebarProvider)
+  );
+
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.text = "$(sync) Codex Sync";
+  statusBarItem.tooltip = "Codex Chat Sync";
+  statusBarItem.command = "codexChatSync.syncNow";
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("codexChatSync.syncNow", () => executeSync(context)),

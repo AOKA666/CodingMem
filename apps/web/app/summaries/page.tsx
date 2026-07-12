@@ -2,7 +2,7 @@ import Link from "next/link";
 import { todayIsoDate } from "@/lib/date";
 import { projectDisplayName, projectIdentityKey } from "@/lib/projectIdentity";
 import { fetchRawMessagesInRange } from "@/lib/rawMessages";
-import { stripThinkTags } from "@/lib/summarize";
+import { sanitizeSummary } from "@/lib/summarize";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { summarizeTimelineRows } from "@/lib/timelineSummary";
 import { updateProjectName } from "./actions";
@@ -64,7 +64,7 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
     getDashboardData(selectedDate)
   ]);
 
-  const summary = stripThinkTags(selected?.summary_markdown || "");
+  const summary = sanitizeSummary(selected?.summary_markdown || "");
   const overview = getOverviewPoints(summary);
 
   return (

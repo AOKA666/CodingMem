@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { generateSummaryForDate } from "@/lib/summarize";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -12,6 +13,7 @@ export async function regenerateSummary(formData: FormData) {
 
   await generateSummaryForDate(date);
   revalidatePath("/summaries");
+  redirect(`/summaries?date=${encodeURIComponent(date)}`);
 }
 
 export async function updateProjectName(formData: FormData) {

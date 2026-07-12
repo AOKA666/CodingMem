@@ -4,6 +4,7 @@
   "description": "同步本地 Codex 聊天记录并保存 AI 编程日报。",
   "version": "0.1.0",
   "publisher": "local",
+  "icon": "assets/codex-sync.png",
   "engines": {
     "vscode": "^1.92.0"
   },
@@ -11,6 +12,24 @@
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codexChatSync",
+          "title": "Codex Chat Sync",
+          "icon": "assets/codex-sync.svg"
+        }
+      ]
+    },
+    "views": {
+      "codexChatSync": [
+        {
+          "id": "codexChatSync.sidebar",
+          "name": "Sync Panel",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "codexChatSync.syncNow",
@@ -37,6 +56,20 @@
         "title": "Codex 聊天同步：查看日志"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "codexChatSync.syncNow",
+          "when": "view == codexChatSync.sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codexChatSync.openDashboard",
+          "when": "view == codexChatSync.sidebar",
+          "group": "navigation@2"
+        }
+      ]
+    },
     "configuration": {
       "title": "Codex 聊天同步",
       "properties": {

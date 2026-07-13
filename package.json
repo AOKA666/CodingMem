@@ -9,6 +9,7 @@
   "scripts": {
     "build": "npm run build --workspace apps/web && npm run compile --workspace apps/extension",
     "dev:web": "npm run dev --workspace apps/web",
-    "compile:extension": "npm run compile --workspace apps/extension"
+    "compile:extension": "npm run compile --workspace apps/extension",
+    "test": "node --test --experimental-strip-types apps/web/lib/*.test.ts"
   }
 }

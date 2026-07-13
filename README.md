@@ -60,9 +60,42 @@ MINIMAX_MODEL=MiniMax-M3
 
 说明：
 
-- `SYNC_API_TOKEN` 是你自己设置的同步口令，VS Code 插件和后台必须一致。
+- `SYNC_API_TOKEN` 是你自己设置的同步口令，VS Code 插件、Hermes 定时上传和后台必须一致。
 - `MINIMAX_API_KEY` 是 MiniMax Token Plan 的订阅 Key。
 - `MINIMAX_MODEL` 默认使用 `MiniMax-M3`。
+
+## Hermes 工作助手定时总结
+
+后续如果不再通过 Codex / VS Code 插件同步原始消息，可以让 Hermes 的“工作助手”每天定时生成总结，并直接上传到后台。
+
+新增接口：
+
+```text
+POST /api/summaries/import
+Authorization: Bearer <SYNC_API_TOKEN>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "date": "2026-07-13",
+  "source": "hermes-work-assistant",
+  "projects": ["工作助手"],
+  "summary": "项目记忆总览\n...\n\n项目：工作助手\n功能变化：...\n问题处理：...\n当前状态：...\n后续注意：..."
+}
+```
+
+行为规则：
+
+- 只负责写入之后新生成的总结。
+- 如果某个日期已经存在总结，接口会返回 `skipped: true`，不会覆盖旧内容。
+- 上传前仍会清理 `<think>` 标签和明显推理过程行。
+- 总结格式规则不改，仍以后台 `apps/web/lib/summarize.ts` 里的 `SUMMARY_SYSTEM_PROMPT` 为准。
+- 可通过 `GET /api/summaries/rules` 查看当前后台使用的总结规则，Hermes 定时任务应照这个规则生成内容。
+
+Hermes cron 提示词应明确要求：只汇总“工作助手”的当天聊天记录；必须使用 `/api/summaries/rules` 返回的规则；生成后调用 `/api/summaries/import` 上传；不要重新生成或覆盖已有日期的总结。
 
 ## 运行 VS Code 插件
 

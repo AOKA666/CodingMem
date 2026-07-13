@@ -21,7 +21,7 @@ const LOW_VALUE_CONTENT = [
 const POLICY_META = /(?:system prompt|developer policy|priority rules|thinking mode|think tags|root_system_policy)/i;
 const REASONING_LINE = /^(?:wait[,.:\s]|actually\b|the system prompt\b|this is a conflict\b|according to priority rules\b|root_system_policy\b)/i;
 
-const SYSTEM_PROMPT = `你是一个产品记忆整理助手。
+export const SUMMARY_SYSTEM_PROMPT = `你是一个产品记忆整理助手。
 
 请把这段时间内的 Codex 聊天记录整理成一份便于回看的项目记忆。只从“功能、体验、问题、结果”的角度总结，不写项目架构、代码文件、函数名、接口名、数据库表名、命令、路径或实现细节。
 
@@ -124,7 +124,7 @@ async function callLlm(messages: RawMessage[]) {
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: SUMMARY_SYSTEM_PROMPT },
         { role: "user", content: `聊天记录：\n${chatText}` }
       ],
       temperature: 0.2

@@ -14,7 +14,9 @@ export function projectDisplayName(projectName: string | null | undefined) {
 }
 
 const PROJECT_ALIASES: Record<string, string> = {
-  autogen: "videogen"
+  autogen: "videogen",
+  每日复盘: "review",
+  视频生成: "videogen"
 };
 
 const PROJECT_DISPLAY_NAMES: Record<string, string> = {

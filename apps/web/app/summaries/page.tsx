@@ -1,17 +1,26 @@
 import Link from "next/link";
+import { normalizeDashboardRange, rangeToIsoTimestamps } from "@/lib/dashboardRange";
 import { todayIsoDate } from "@/lib/date";
 import { projectDisplayName, projectIdentityKey } from "@/lib/projectIdentity";
 import { fetchRawMessagesInRange } from "@/lib/rawMessages";
 import { sanitizeSummary } from "@/lib/summarize";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { extractSummaryTimelineEntries, type SummaryTimelineEntry } from "@/lib/summaryTimeline";
 import { summarizeTimelineRows } from "@/lib/timelineSummary";
 import { updateProjectName } from "./actions";
 import { CopyMarkdownButton, GenerateSummaryForm } from "./SummaryActions";
+import { DateRangeFilter } from "./DateRangeFilter";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = {
-  date?: string;
+  start?: string;
+  end?: string;
+};
+
+type SummaryRow = {
+  date: string;
+  summary_markdown: string;
 };
 
 type RawMessageRow = {
@@ -47,21 +56,17 @@ type HeatmapDay = {
 
 export default async function SummariesPage({ searchParams }: { searchParams: SearchParams }) {
   const supabase = getSupabaseAdmin();
-  const selectedDate = searchParams.date || todayIsoDate();
+  const today = todayIsoDate();
+  const { startDate, endDate } = normalizeDashboardRange(searchParams, today);
 
-  const [{ data: summaries }, { data: selected }, dashboard] = await Promise.all([
-    supabase
-      .from("codingMem_daily_summaries")
-      .select("date, updated_at")
-      .eq("user_id", "default")
-      .order("date", { ascending: false }),
+  const [{ data: selected }, dashboard] = await Promise.all([
     supabase
       .from("codingMem_daily_summaries")
       .select("date, summary_markdown, updated_at")
       .eq("user_id", "default")
-      .eq("date", selectedDate)
+      .eq("date", today)
       .maybeSingle(),
-    getDashboardData(selectedDate)
+    getDashboardData(startDate, endDate)
   ]);
 
   const summary = sanitizeSummary(selected?.summary_markdown || "");
@@ -97,18 +102,6 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
           </span>
         </nav>
 
-        <section className="side-panel">
-          <p className="side-title">记忆版本</p>
-          <div className="date-list">
-            {(summaries ?? []).slice(0, 8).map((item) => (
-              <Link className="date-link" href={`/summaries?date=${item.date}`} key={item.date}>
-                <span>{item.date}</span>
-                <em>{item.date === selectedDate ? "当前" : "查看"}</em>
-              </Link>
-            ))}
-            {(summaries ?? []).length === 0 ? <p className="empty-note">还没有生成项目记忆。</p> : null}
-          </div>
-        </section>
       </aside>
 
       <section className="memory-main">
@@ -118,12 +111,8 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
             <h1>管理和回顾所有项目的 AI 编程活动</h1>
           </div>
           <div className="topbar-actions">
-            <form className="date-filter" action="/summaries">
-              <span className="date-filter-icon">D</span>
-              <input name="date" type="date" defaultValue={selectedDate} aria-label="选择日期" />
-              <button className="button" type="submit">筛选</button>
-            </form>
-            <GenerateSummaryForm date={selectedDate} />
+            <DateRangeFilter startDate={startDate} endDate={endDate} today={today} />
+            <GenerateSummaryForm date={today} />
             <CopyMarkdownButton summary={summary} />
           </div>
         </header>
@@ -152,7 +141,7 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
                     <div className={`project-icon tone-${index % 4}`}>{getProjectInitial(project.name)}</div>
                     <div className="project-title-block">
                       <form action={updateProjectName} className="project-name-form" id={formId}>
-                        <input name="date" type="hidden" value={selectedDate} />
+                        <input name="date" type="hidden" value={endDate} />
                         <input name="oldName" type="hidden" value={project.rawName ?? "__NULL__"} />
                         <input name="newName" defaultValue={project.name} aria-label="项目名" />
                       </form>
@@ -160,7 +149,7 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
                     </div>
                     <div className="project-actions">
                       <button className="text-button save-button" form={formId} type="submit">保存</button>
-                      <Link className="detail-link compact-link" href={`/summaries/project?date=${selectedDate}&project=${encodeURIComponent(project.key)}`}>
+                      <Link className="detail-link compact-link" href={`/summaries/project?date=${endDate}&project=${encodeURIComponent(project.key)}`}>
                         详情 →
                       </Link>
                     </div>
@@ -210,7 +199,7 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
               <div className="aside-card-head">
                 <div>
                   <p className="eyebrow">今日总结</p>
-                  <h2>{formatFullDate(selectedDate)}</h2>
+                  <h2>{formatFullDate(today)}</h2>
                 </div>
                 <span className="calendar-badge">D</span>
               </div>
@@ -224,9 +213,9 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
             <section className="aside-card heatmap-card">
               <div className="aside-card-head compact">
                 <h3>活跃热力图</h3>
-                <span>最近 30 天</span>
+                <span>{formatRangeLabel(startDate, endDate)}</span>
               </div>
-              <div className="heatmap-grid" aria-label="最近 30 天活跃热力图">
+              <div className="heatmap-grid" aria-label={`${startDate} 至 ${endDate} 活跃热力图`}>
                 {dashboard.heatmap.map((day) => (
                   <span className={`heat-cell level-${day.level}`} title={`${day.date}: ${day.count} 条记录`} key={day.date} />
                 ))}
@@ -243,7 +232,7 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
 
             <section className="aside-card active-projects-card">
               <div className="aside-card-head compact">
-                <h3>今日活跃项目</h3>
+                <h3>{endDate === today ? "今日活跃项目" : "范围结束日活跃项目"}</h3>
                 <span>{dashboard.activeProjects.length} 个项目</span>
               </div>
               <div className="active-project-list">
@@ -257,7 +246,7 @@ export default async function SummariesPage({ searchParams }: { searchParams: Se
                     <em>{project.messages}</em>
                   </div>
                 ))}
-                {dashboard.activeProjects.length === 0 ? <p className="empty-note">所选日期暂无活跃项目。</p> : null}
+                {dashboard.activeProjects.length === 0 ? <p className="empty-note">范围结束日暂无活跃项目。</p> : null}
               </div>
             </section>
           </aside>
@@ -322,14 +311,26 @@ function isImplementationDetail(value: string) {
   return /app\/|src\/|lib\/|api\/|route\.ts|\.tsx|\.ts|function|const|type|interface|schema|SQL|jsonb|Supabase|Next|React|组件|接口|字段|表名|数据表|命令|PowerShell|node_modules/i.test(value);
 }
 
-async function getDashboardData(date: string) {
+async function getDashboardData(startDate: string, endDate: string) {
   const supabase = getSupabaseAdmin();
-  const { start, end } = getMemoryRange(date);
-  const rows = await fetchRawMessagesInRange<RawMessageRow>(
-    supabase,
-    "role, content, occurred_at, project_name, device_id",
-    start,
-    end
+  const { start, end } = rangeToIsoTimestamps(startDate, endDate);
+  const [rows, { data: summaryRows }] = await Promise.all([
+    fetchRawMessagesInRange<RawMessageRow>(
+      supabase,
+      "role, content, occurred_at, project_name, device_id",
+      start,
+      end
+    ),
+    supabase
+      .from("codingMem_daily_summaries")
+      .select("date, summary_markdown")
+      .eq("user_id", "default")
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true })
+  ]);
+  const summaryEntries = ((summaryRows ?? []) as SummaryRow[]).flatMap((row) =>
+    extractSummaryTimelineEntries(sanitizeSummary(row.summary_markdown || ""), row.date)
   );
   const projectMap = new Map<string, ProjectCard & { deviceSet: Set<string>; dayMap: Map<string, RawMessageRow[]> }>();
 
@@ -379,20 +380,53 @@ async function getDashboardData(date: string) {
     };
   });
 
-  const todayRows = rows.filter((row) => row.occurred_at.slice(0, 10) === date);
-  const activeProjects = getActiveProjects(todayRows);
+  const mergedProjects = new Map(projects.map((project) => [project.key, project]));
+  summaryEntries.forEach((entry) => {
+    const key = projectIdentityKey(entry.projectName);
+    const existing = mergedProjects.get(key);
+    const activityAt = `${entry.date}T23:59:59.999Z`;
+
+    if (existing) {
+      existing.timeline = dedupeTimeline(
+        [...existing.timeline.filter((item) => item.date !== entry.date), { date: entry.date, messages: 0, text: entry.text }].sort((a, b) =>
+          a.date.localeCompare(b.date)
+        )
+      );
+      if (!existing.lastActiveAt || existing.lastActiveAt < activityAt) existing.lastActiveAt = activityAt;
+      return;
+    }
+
+    mergedProjects.set(key, {
+      key,
+      rawName: entry.projectName,
+      name: projectDisplayName(entry.projectName),
+      messages: 0,
+      devices: 0,
+      firstActiveAt: activityAt,
+      lastActiveAt: activityAt,
+      timeline: [{ date: entry.date, messages: 0, text: entry.text }]
+    });
+  });
+
+  const endDateRows = rows.filter((row) => row.occurred_at.slice(0, 10) === endDate);
+  const endDateEntries = summaryEntries.filter((entry) => entry.date === endDate);
+  const activeProjects = getActiveProjects(endDateRows, endDateEntries);
+  const activeDateSet = new Set(rows.map((row) => row.occurred_at.slice(0, 10)));
+  summaryEntries.forEach((entry) => activeDateSet.add(entry.date));
 
   return {
     messages: rows.length,
     devices: new Set(rows.map((row) => row.device_id)).size,
-    activeDays: new Set(rows.map((row) => row.occurred_at.slice(0, 10))).size,
-    heatmap: buildHeatmap(rows, date),
+    activeDays: activeDateSet.size,
+    heatmap: buildHeatmap(rows, summaryEntries, startDate, endDate),
     activeProjects,
-    projects: projects.sort((a, b) => b.messages - a.messages)
+    projects: Array.from(mergedProjects.values()).sort((a, b) =>
+      (b.lastActiveAt ?? "").localeCompare(a.lastActiveAt ?? "") || b.messages - a.messages
+    )
   };
 }
 
-function getActiveProjects(todayRows: RawMessageRow[]) {
+function getActiveProjects(todayRows: RawMessageRow[], summaryEntries: SummaryTimelineEntry[]) {
   const projectCounts = new Map<string, { key: string; name: string; messages: number }>();
 
   todayRows.forEach((row) => {
@@ -406,7 +440,18 @@ function getActiveProjects(todayRows: RawMessageRow[]) {
     projectCounts.set(key, existing);
   });
 
-  const total = Math.max(todayRows.length, 1);
+  summaryEntries.forEach((entry) => {
+    const key = projectIdentityKey(entry.projectName);
+    const existing = projectCounts.get(key) ?? {
+      key,
+      name: projectDisplayName(entry.projectName),
+      messages: 0
+    };
+    existing.messages += 1;
+    projectCounts.set(key, existing);
+  });
+
+  const total = Math.max(todayRows.length + summaryEntries.length, 1);
   return Array.from(projectCounts.values())
     .map((project) => ({
       ...project,
@@ -416,18 +461,21 @@ function getActiveProjects(todayRows: RawMessageRow[]) {
     .slice(0, 5);
 }
 
-function buildHeatmap(rows: RawMessageRow[], selectedDate: string): HeatmapDay[] {
-  const end = new Date(`${selectedDate}T00:00:00.000Z`);
+function buildHeatmap(rows: RawMessageRow[], summaryEntries: SummaryTimelineEntry[], startDate: string, endDate: string): HeatmapDay[] {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
   const counts = new Map<string, number>();
   rows.forEach((row) => {
     const day = row.occurred_at.slice(0, 10);
     counts.set(day, (counts.get(day) ?? 0) + 1);
   });
+  summaryEntries.forEach((entry) => counts.set(entry.date, (counts.get(entry.date) ?? 0) + 1));
   const max = Math.max(...Array.from(counts.values()), 1);
+  const dayCount = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
 
-  return Array.from({ length: 30 }).map((_, index) => {
-    const itemDate = new Date(end);
-    itemDate.setUTCDate(end.getUTCDate() - (29 - index));
+  return Array.from({ length: dayCount }).map((_, index) => {
+    const itemDate = new Date(start);
+    itemDate.setUTCDate(start.getUTCDate() + index);
     const key = itemDate.toISOString().slice(0, 10);
     const count = counts.get(key) ?? 0;
     return {
@@ -474,16 +522,6 @@ function formatFullDate(value: string) {
   }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
-function getMemoryRange(date: string) {
-  const endDateValue = new Date(`${date}T00:00:00.000Z`);
-  const startDateValue = new Date(endDateValue);
-  startDateValue.setUTCDate(startDateValue.getUTCDate() - 29);
-
-  const endExclusive = new Date(endDateValue);
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-
-  return {
-    start: startDateValue.toISOString(),
-    end: endExclusive.toISOString()
-  };
+function formatRangeLabel(startDate: string, endDate: string) {
+  return `${startDate.slice(5)} 至 ${endDate.slice(5)}`;
 }

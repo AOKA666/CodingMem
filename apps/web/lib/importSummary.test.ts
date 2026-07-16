@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildImportedSummaryRow, shouldCreateImportedSummary } from "./importSummary.ts";
+import {
+  buildImportedSummaryRow,
+  shouldCreateImportedSummary,
+  shouldReplaceImportedSummary
+} from "./importSummary.ts";
 
 test("buildImportedSummaryRow preserves the existing summary format and strips thinking text", () => {
   const row = buildImportedSummaryRow({
@@ -33,4 +37,11 @@ test("buildImportedSummaryRow rejects invalid dates and empty summaries", () => 
 test("shouldCreateImportedSummary never overwrites an existing daily summary", () => {
   assert.equal(shouldCreateImportedSummary(null), true);
   assert.equal(shouldCreateImportedSummary({ summary_markdown: "已经存在的总结" }), false);
+});
+
+test("shouldReplaceImportedSummary only permits an explicit replacement", () => {
+  assert.equal(shouldReplaceImportedSummary(true), true);
+  assert.equal(shouldReplaceImportedSummary(false), false);
+  assert.equal(shouldReplaceImportedSummary("true"), false);
+  assert.equal(shouldReplaceImportedSummary(undefined), false);
 });

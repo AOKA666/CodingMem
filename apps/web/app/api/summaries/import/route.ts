@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSyncToken } from "@/lib/auth";
-import { buildImportedSummaryRow, shouldCreateImportedSummary, toSummaryInsertRow } from "@/lib/importSummary";
+import {
+  buildImportedSummaryRow,
+  shouldCreateImportedSummary,
+  shouldReplaceImportedSummary,
+  toSummaryInsertRow
+} from "@/lib/importSummary";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -41,10 +46,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: existingError.message }, { status: 500 });
   }
 
-  if (!shouldCreateImportedSummary(existing)) {
+  const replaceExisting = shouldReplaceImportedSummary(body.replace_existing);
+  const shouldCreate = shouldCreateImportedSummary(existing);
+
+  if (!shouldCreate && !replaceExisting) {
     return NextResponse.json({
       ok: true,
       inserted: false,
+      replaced: false,
       skipped: true,
       date: row.date,
       source: row.source,
@@ -52,14 +61,23 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { error: insertError } = await supabase.from("codingMem_daily_summaries").insert(toSummaryInsertRow(row));
-  if (insertError) {
-    return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
+  const writeRow = toSummaryInsertRow(row);
+  const { error: writeError } = shouldCreate
+    ? await supabase.from("codingMem_daily_summaries").insert(writeRow)
+    : await supabase
+        .from("codingMem_daily_summaries")
+        .update(writeRow)
+        .eq("user_id", row.user_id)
+        .eq("date", row.date);
+
+  if (writeError) {
+    return NextResponse.json({ ok: false, error: writeError.message }, { status: 500 });
   }
 
   return NextResponse.json({
     ok: true,
-    inserted: true,
+    inserted: shouldCreate,
+    replaced: !shouldCreate,
     skipped: false,
     date: row.date,
     source: row.source,

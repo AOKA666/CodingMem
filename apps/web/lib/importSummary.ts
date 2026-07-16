@@ -47,6 +47,10 @@ export function shouldCreateImportedSummary(existing: ExistingSummary) {
   return !existing?.summary_markdown;
 }
 
+export function shouldReplaceImportedSummary(value: unknown) {
+  return value === true;
+}
+
 export function toSummaryInsertRow(row: ImportedSummaryRow) {
   return {
     user_id: row.user_id,
